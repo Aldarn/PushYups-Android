@@ -7,13 +7,21 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.TextView;
 
+import com.example.bholmes.pushyups.util.FileIO;
+import java.io.FileOutputStream;
+
 public class RepActivity extends Activity implements SensorEventListener {
+    public static final String LOG_TAG = "PushYup";
+
     private SensorManager sensorManager;
     private Sensor lightSensor;
+
+    private FileOutputStream luxDataFileStream;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -24,6 +32,9 @@ public class RepActivity extends Activity implements SensorEventListener {
         // a particular sensor.
         sensorManager = (SensorManager)getSystemService(Context.SENSOR_SERVICE);
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+
+        // Get a file handle for the lux data
+        luxDataFileStream = FileIO.getDataFile("luxData.txt");
     }
 
     @Override
@@ -34,6 +45,9 @@ public class RepActivity extends Activity implements SensorEventListener {
     @Override
     public final void onSensorChanged(SensorEvent event) {
         float lux = event.values[0];
+
+        // Log the lux
+        FileIO.logToDataFile(luxDataFileStream, System.currentTimeMillis() + "," + lux + "\n");
 
         // Display the lux
         TextView luxValue = (TextView)findViewById(R.id.luxValue);
@@ -71,7 +85,7 @@ public class RepActivity extends Activity implements SensorEventListener {
         super.onResume();
 
         // TODO: Use "Fastest" delay?
-        sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     @Override
@@ -79,5 +93,15 @@ public class RepActivity extends Activity implements SensorEventListener {
         // Be sure to unregister the sensor when the activity pauses.
         super.onPause();
         sensorManager.unregisterListener(this);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        try {
+            luxDataFileStream.close();
+        } catch(Exception e) {
+            Log.e(LOG_TAG, "Error closing data output stream: " + e, e);
+        }
     }
 }
