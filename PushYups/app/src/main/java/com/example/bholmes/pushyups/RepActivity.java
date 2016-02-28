@@ -53,17 +53,29 @@ public class RepActivity extends Activity implements SensorEventListener {
     private Calibration up_calibration = new Calibration();
     private Calibration down_calibration = new Calibration();
 
-    TextView status_text = (TextView)findViewById(R.id.status_text);
-    TextView status_message = (TextView)findViewById(R.id.status_message);
-    TextView up_calibration_value = (TextView)findViewById(R.id.up_calibration_value);
-    TextView down_calibration_value = (TextView)findViewById(R.id.down_calibration_value);
-    TextView calibration_countdown_value = (TextView)findViewById(R.id.calibration_countdown_value);
-    Button calibrate_button = (Button)findViewById(R.id.calibrate_button);
+    TextView reps_value;
+    TextView status_text;
+    TextView status_message;
+    TextView up_calibration_value;
+    TextView down_calibration_value;
+    TextView calibration_countdown_value;
+    Button calibrate_button;
+
+    private int reps = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_rep);
+
+        // Set all the views
+        reps_value = (TextView)findViewById(R.id.reps_value);
+        status_text = (TextView)findViewById(R.id.status_text);
+        status_message = (TextView)findViewById(R.id.status_message);
+        up_calibration_value = (TextView)findViewById(R.id.up_calibration_value);
+        down_calibration_value = (TextView)findViewById(R.id.down_calibration_value);
+        calibration_countdown_value = (TextView)findViewById(R.id.calibration_countdown_value);
+        calibrate_button = (Button)findViewById(R.id.calibrate_button);
 
         // Get an instance of the sensor service, and use that to get an instance of
         // a particular sensor.
@@ -84,6 +96,9 @@ public class RepActivity extends Activity implements SensorEventListener {
                 }
             }
         });
+
+        // Initialize the display
+        refresh_display();
     }
 
     // --------------------------------------------------
@@ -91,8 +106,9 @@ public class RepActivity extends Activity implements SensorEventListener {
     // --------------------------------------------------
 
     private void refresh_display() {
-        // TODO: Set values for up & down calibrations
+        reps_value.setText(String.valueOf(reps));
         status_text.setText(state.name());
+        status_message.setText(state.message);
         up_calibration_value.setText("Average: " + up_calibration.average + " | Max: " + up_calibration.window_max + " | Min: " + up_calibration.window_min);
         down_calibration_value.setText("Average: " + down_calibration.average + " | Max: " + down_calibration.window_max + " | Min: " + down_calibration.window_min);
     }
@@ -108,7 +124,7 @@ public class RepActivity extends Activity implements SensorEventListener {
             for (int light_level : light_levels) {
                 total_light += light_level;
             }
-            average = total_light / light_levels.size();
+            average = light_levels.size() < 0 ? total_light / light_levels.size() : 0;
             window_max = (int)(average * 1.25);
             window_min = (int)(average * 0.75);
         }
@@ -125,6 +141,7 @@ public class RepActivity extends Activity implements SensorEventListener {
         if (countdown == 0) {
             countdown = CALIBRATION_COUNTDOWN;
             state = next_state;
+            return 0;
         } else {
             calibration_countdown_value.setText("" + countdown);
             countdown -= 1;
@@ -134,7 +151,7 @@ public class RepActivity extends Activity implements SensorEventListener {
     }
 
     private int calibration_countdown(State next_state, Calibration calibration) {
-        int delay = generic_countdown(State.DOWN_COUNTDOWN);
+        int delay = generic_countdown(next_state);
 
         if (countdown == CALIBRATION_COUNTDOWN) {
             // TODO: Begin monitoring light levels
@@ -154,6 +171,7 @@ public class RepActivity extends Activity implements SensorEventListener {
     // --------------------------------------------------
 
     private void begin_calibration() {
+        countdown = CALIBRATION_COUNTDOWN;
         state = State.UP_COUNTDOWN;
         up_calibration.reset();
         down_calibration.reset();
@@ -168,6 +186,7 @@ public class RepActivity extends Activity implements SensorEventListener {
         state = State.IDLE;
         calibrate_button.setText("Begin Calibration");
         calibration_countdown_value.setText("");
+        refresh_display();
     }
 
     private int handle_up_countdown() {
@@ -191,7 +210,7 @@ public class RepActivity extends Activity implements SensorEventListener {
         calibrate_button.setText("Redo Calibration");
         calibration_countdown_value.setText("");
         refresh_display();
-        return 0;
+        return 1000;
     }
 
     private int state_factory() {
@@ -214,9 +233,17 @@ public class RepActivity extends Activity implements SensorEventListener {
     Runnable timerRunnable = new Runnable() {
         @Override
         public void run() {
+            System.out.println("timer called");
+            boolean should_end = state == State.COMPLETE;
+
+            status_text.setText(state.name());
             status_message.setText(state.message);
             int delay = state_factory();
-            timerHandler.postDelayed(this, delay);
+
+            // Need to check the state as otherwise the timer runs forever...
+            if (!should_end) {
+                timerHandler.postDelayed(this, delay);
+            }
         }
     };
 
@@ -237,11 +264,11 @@ public class RepActivity extends Activity implements SensorEventListener {
         FileIO.logToDataFile(luxDataFileStream, System.currentTimeMillis() + "," + lux + "\n");
 
         // Display the lux
-        TextView luxValue = (TextView)findViewById(R.id.luxValue);
+        TextView luxValue = (TextView)findViewById(R.id.lux_value);
         luxValue.setText(String.valueOf(lux));
 
         // TODO: Up the reps somehow
-        TextView repsValue = (TextView)findViewById(R.id.repsValue);
+        TextView repsValue = (TextView)findViewById(R.id.reps_value);
     }
 
     @Override
