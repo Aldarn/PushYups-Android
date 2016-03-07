@@ -15,10 +15,12 @@ import android.widget.TextView;
 import android.os.Handler;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.lang.RuntimeException;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
+import java.util.Random;
 
 import com.example.bholmes.pushyups.util.FileIO;
 
@@ -33,14 +35,14 @@ public class RepActivity extends Activity implements SensorEventListener {
     private static final int CALIBRATION_COUNTDOWN = 3;
     private int countdown = CALIBRATION_COUNTDOWN;
 
-    private static enum State {
+    private enum State {
         IDLE ("To begin, place your phone underneath the upper centre of your torso. Then click the button to calibrate the hands free pushup detection for your room."),
         UP_COUNTDOWN ("Prepare for yourself to be in an upright pushup position in..."),
         UP_CALIBRATION ("Calibrating UP position, please wait..."),
         DOWN_COUNTDOWN ("Now prepare yourself to be in a downward pushup position in..."),
         DOWN_CALIBRATION ("Calibrating DOWN position, please wait..."),
         COMPLETE ("Calibration completed, you're now ready to begin hands free pushups!"),
-        PUSHUPS ("Pump some iron mofucka!!!");
+        PUSHUPS ("Pump some iron!!!");
 
         private String message;
 
@@ -49,6 +51,14 @@ public class RepActivity extends Activity implements SensorEventListener {
         }
     }
     private State state = State.IDLE;
+
+    private enum PushupState {
+        UP,
+        FALLING,
+        DOWN,
+        RISING;
+    }
+    private PushupState pushup_state = PushupState.UP;
 
     private Calibration up_calibration = new Calibration();
     private Calibration down_calibration = new Calibration();
@@ -60,8 +70,12 @@ public class RepActivity extends Activity implements SensorEventListener {
     TextView down_calibration_value;
     TextView calibration_countdown_value;
     Button calibrate_button;
+    TextView lux_value;
+    Button start_button;
 
+    private int lux;
     private int reps = 0;
+    private Random random = new Random();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,6 +90,8 @@ public class RepActivity extends Activity implements SensorEventListener {
         down_calibration_value = (TextView)findViewById(R.id.down_calibration_value);
         calibration_countdown_value = (TextView)findViewById(R.id.calibration_countdown_value);
         calibrate_button = (Button)findViewById(R.id.calibrate_button);
+        lux_value = (TextView)findViewById(R.id.lux_value);
+        start_button = (Button)findViewById(R.id.start_button);
 
         // Get an instance of the sensor service, and use that to get an instance of
         // a particular sensor.
@@ -97,6 +113,20 @@ public class RepActivity extends Activity implements SensorEventListener {
             }
         });
 
+        // Add hander to the start button
+        start_button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (state == State.IDLE || state == State.COMPLETE) {
+                    begin_pushups(v);
+                } else if (state == State.PUSHUPS) {
+                    end_pushups();
+                } else {
+                    Toast.makeText(v.getContext(), "Please wait for calibration to finish before beginning pushups.", Toast.LENGTH_SHORT);
+                }
+            }
+        });
+
         // Initialize the display
         refresh_display();
     }
@@ -106,6 +136,7 @@ public class RepActivity extends Activity implements SensorEventListener {
     // --------------------------------------------------
 
     private void refresh_display() {
+        lux_value.setText(String.valueOf(lux));
         reps_value.setText(String.valueOf(reps));
         status_text.setText(state.name());
         status_message.setText(state.message);
@@ -124,7 +155,7 @@ public class RepActivity extends Activity implements SensorEventListener {
             for (int light_level : light_levels) {
                 total_light += light_level;
             }
-            average = light_levels.size() < 0 ? total_light / light_levels.size() : 0;
+            average = light_levels.size() == 0 ? 0 : (int)((float)total_light / (float)light_levels.size());
             window_max = (int)(average * 1.25);
             window_min = (int)(average * 0.75);
         }
@@ -134,6 +165,10 @@ public class RepActivity extends Activity implements SensorEventListener {
             window_max = 0;
             window_min = 0;
             light_levels.clear();
+        }
+
+        public boolean is_calibrated() {
+            return average != 9;
         }
     }
 
@@ -153,11 +188,13 @@ public class RepActivity extends Activity implements SensorEventListener {
     private int calibration_countdown(State next_state, Calibration calibration) {
         int delay = generic_countdown(next_state);
 
-        if (countdown == CALIBRATION_COUNTDOWN) {
-            // TODO: Begin monitoring light levels
-        } else if (countdown == 0) {
-            // TODO: End monitoring light levels
+        if (next_state == State.DOWN_COUNTDOWN) {
+            calibration.light_levels.add((int)((random.nextFloat() + 1) * 500));
+        } else {
+            calibration.light_levels.add((int)(random.nextFloat() * 100));
+        }
 
+        if (countdown == 0) {
             // Calculate the final window and update the display
             calibration.calculate();
             refresh_display();
@@ -224,6 +261,12 @@ public class RepActivity extends Activity implements SensorEventListener {
             return handle_down_calibration();
         } else if (state == State.COMPLETE) {
             return handle_complete();
+        } else if (state == State.PUSHUPS) {
+            lux = (int)(random.nextFloat() * 1000);
+            pushups_sensor_handler(lux);
+            refresh_display();
+            status_message.setText(status_message.getText() + " " + pushup_state);
+            return 1000;
         }
 
         throw new RuntimeException("Invalid state " + state + "reached in state factory!");
@@ -234,7 +277,8 @@ public class RepActivity extends Activity implements SensorEventListener {
         @Override
         public void run() {
             System.out.println("timer called");
-            boolean should_end = state == State.COMPLETE;
+            // boolean should_end = state == State.COMPLETE;
+            boolean should_end = false;
 
             status_text.setText(state.name());
             status_message.setText(state.message);
@@ -248,8 +292,57 @@ public class RepActivity extends Activity implements SensorEventListener {
     };
 
     // --------------------------------------------------
+    // Pushup handlers
+    // --------------------------------------------------
+
+    private void begin_pushups(View v) {
+        if(up_calibration.is_calibrated() && down_calibration.is_calibrated()) {
+            state = State.PUSHUPS;
+        } else {
+            Toast.makeText(v.getContext(), "Please calibrate before beginning pushups.", Toast.LENGTH_SHORT);
+        }
+    }
+
+    private void end_pushups() {
+        state = state.IDLE;
+    }
+
+    // --------------------------------------------------
     // Activity handlers
     // --------------------------------------------------
+
+    private PushupState get_pushup_state(int lux) {
+        if (lux > up_calibration.window_min) {
+            return PushupState.UP;
+        } else if (lux < down_calibration.window_max) {
+            return PushupState.DOWN;
+        } else if (pushup_state == PushupState.UP || pushup_state == PushupState.FALLING) {
+            return PushupState.FALLING;
+        }
+        return PushupState.RISING;
+    }
+
+    private void pushups_sensor_handler(int lux) {
+        // Grab the new pushup state
+        PushupState new_pushup_state = get_pushup_state(lux);
+
+        // TODO: Record initial pushup state to use in determining when a full rep is completed
+
+        // Increment reps when they go from a down or rising state to an up state
+        // - can make this stricter by only accepting rising, but that risks false
+        // negatives in low light conditions - needs testing with real data!
+        if ((pushup_state == PushupState.RISING || pushup_state == PushupState.DOWN)
+                && new_pushup_state == PushupState.UP) {
+            reps++;
+        }
+
+        // Set the new state
+        pushup_state = new_pushup_state;
+    }
+
+    private void calibration_sensor_handler(int lux, Calibration calibration) {
+        calibration.light_levels.add(lux);
+    }
 
     @Override
     public final void onAccuracyChanged(Sensor sensor, int accuracy) {
@@ -258,17 +351,22 @@ public class RepActivity extends Activity implements SensorEventListener {
 
     @Override
     public final void onSensorChanged(SensorEvent event) {
-        float lux = event.values[0];
+        lux = (int)event.values[0];
 
         // Log the lux
         FileIO.logToDataFile(luxDataFileStream, System.currentTimeMillis() + "," + lux + "\n");
 
-        // Display the lux
-        TextView luxValue = (TextView)findViewById(R.id.lux_value);
-        luxValue.setText(String.valueOf(lux));
+        // Logic depending on current state
+        if (state == State.UP_CALIBRATION) {
+            calibration_sensor_handler(lux, up_calibration);
+        } else if (state == State.DOWN_CALIBRATION) {
+            calibration_sensor_handler(lux, down_calibration);
+        } else if (state == State.PUSHUPS) {
+            pushups_sensor_handler(lux);
+        }
 
-        // TODO: Up the reps somehow
-        TextView repsValue = (TextView)findViewById(R.id.reps_value);
+        // Refresh the display
+        refresh_display();
     }
 
     @Override
